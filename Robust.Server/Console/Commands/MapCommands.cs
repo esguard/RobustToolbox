@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using Robust.Server.Maps;
 using Robust.Server.Player;
 using Robust.Shared.Console;
@@ -10,6 +13,8 @@ using Robust.Shared.IoC;
 using Robust.Shared.Localization;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
+using Robust.Shared.Utility;
+using Timer = Robust.Shared.Timing.Timer;
 
 namespace Robust.Server.Console.Commands
 {
@@ -219,7 +224,7 @@ namespace Robust.Server.Console.Commands
                 shell.WriteLine(Help);
                 return;
             }
-                
+
             if (!int.TryParse(args[0], out var intMapId))
             {
                 shell.WriteLine(Help);
@@ -364,6 +369,117 @@ namespace Robust.Server.Console.Commands
                 shell.WriteLine(Loc.GetString("cmd-loadmap-successt", ("mapId", mapId), ("path", args[1])));
             else
                 shell.WriteLine(Loc.GetString("cmd-loadmap-error", ("path", args[1])));
+        }
+    }
+
+    public sealed class AutoSaveMap : IConsoleCommand
+    {
+        public string Command => "autosavemap";
+        public string Description => Loc.GetString("cmd-autosavemap-desc");
+        public string Help => Loc.GetString("cmd-autosavemap-help");
+
+        private Dictionary<MapId, CancellationTokenSource> _cancelTokens = new();
+
+        public CompletionResult GetCompletion(IConsoleShell shell, string[] args)
+        {
+            switch (args.Length)
+            {
+                case 1:
+                    return CompletionResult.FromHint(Loc.GetString("cmd-hint-autosavemap-id"));
+                case 2:
+                    return CompletionResult.FromHint(Loc.GetString("cmd-hint-autosavemap-frequency"));
+                case 3:
+                    return CompletionResult.FromHint(Loc.GetString("cmd-hint-autosavemap-slots"));
+            }
+            return CompletionResult.Empty;
+        }
+
+        public void Execute(IConsoleShell shell, string argStr, string[] args)
+        {
+            if (args.Length < 1)
+            {
+                shell.WriteLine(Help);
+                return;
+            }
+
+            if (!int.TryParse(args[0], out var intMapId))
+            {
+                shell.WriteLine(Help);
+                return;
+            }
+
+            var mapId = new MapId(intMapId);
+
+            // no saving null space
+            if (mapId == MapId.Nullspace)
+                return;
+
+            var mapManager = IoCManager.Resolve<IMapManager>();
+            if (!mapManager.MapExists(mapId))
+            {
+                shell.WriteError(Loc.GetString("cmd-autosavemap-not-exist"));
+                return;
+            }
+
+            if (mapManager.IsMapInitialized(mapId))
+            {
+                shell.WriteError(Loc.GetString("cmd-autosavemap-init-warning"));
+                return;
+            }
+
+            var frequency = 0;
+            var slots = 0;
+            if (_cancelTokens.ContainsKey(mapId) &&
+                (args.Length < 2 || !int.TryParse(args[1], out frequency)) &&
+                (args.Length < 3 || !int.TryParse(args[2], out slots)))
+            {
+                _cancelTokens[mapId].Cancel();
+                _cancelTokens.Remove(mapId);
+                if (frequency == 0 && slots == 0)
+                {
+                    shell.WriteLine(Loc.GetString("cmd-autosavemap-off"));
+                    return;
+                }
+            }
+
+            frequency = frequency == 0 ? 5 : frequency;
+            slots = slots == 0 ? 4 : slots;
+            _cancelTokens.Add(mapId, new CancellationTokenSource());
+            shell.WriteLine(Loc.GetString("cmd-autosavemap-on"));
+            shell.WriteLine("bruh?");
+            var save = (() =>
+                    {
+                        var res = IoCManager.Resolve<IResourceManager>();
+                        var saveDirPath = new ResourcePath($"/map{mapId}").ToRootedPath();
+                        res.UserData.CreateDir(saveDirPath);
+                        var max = 0;
+                        res.UserData.Find()
+                        foreach (var file in res.ContentFindFiles(new ResourcePath($"{res.UserData.RootDir}{saveDirPath}")))
+                        {
+                            shell.WriteLine(file.Filename);
+                            if (!file.Filename.StartsWith("autosave"))
+                            {
+                                continue;
+                            }
+
+                            if (!int.TryParse(file.FilenameWithoutExtension.Substring("autosave".Length), out var num) || num >= slots)
+                            {
+                                continue;
+                            }
+
+                            if (num > max)
+                            {
+                                max = num;
+                            }
+                        }
+
+                        var slot = (max + 1) % slots ;
+
+                        shell.ExecuteCommand($"savemap {mapId} {saveDirPath}/autosave{slot}.yaml");
+                    }
+                );
+            Timer.SpawnRepeating(TimeSpan.FromSeconds(5), save, _cancelTokens[mapId].Token);
+            //Timer.SpawnRepeating(TimeSpan.FromMinutes(frequency), save, _cancelTokens[mapId].Token);
         }
     }
 

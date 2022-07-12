@@ -146,6 +146,17 @@ cmd-hint-loadmap-y-position = [y-position]
 cmd-hint-loadmap-rotation = [rotation]
 cmd-hint-loadmap-uids = [float]
 
+cmd-autosavemap-desc = Toggles autosaving for a map.
+cmd-autosavemap-help = autosavemap <MapID> [frequency] [slots]
+cmd-autosavemap-on = Autosaving on.
+cmd-autosavemap-off = Autosaving off.
+cmd-autosavemap-not-exist = Target map does not exist.
+cmd-autosavemap-init-warning = Attempted to enable autosave for a post-init map.
+cmd-hint-autosavemap-id = <MapID>
+cmd-hint-autosavemap-frequency = [frequency]
+cmd-hint-autosavemap-slots = [slots]
+
+
 ## 'flushcookies' command
 # Note: the flushcookies command is from Robust.Client.WebView, it's not in the main engine code.
 
